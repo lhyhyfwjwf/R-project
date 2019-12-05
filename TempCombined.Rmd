@@ -293,6 +293,7 @@ There exists large gap in each level of family size, so we use the mean value to
 
 ```{r}
 fam.income.summary = aggregate(income ~ FAMSIZE_2012, data = nlsy, FUN = mean)
+fam.income.summary
 ```
 
 Based the following plot, we find the tendency is quite weird.
