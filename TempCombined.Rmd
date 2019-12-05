@@ -293,7 +293,6 @@ There exists large gap in each level of family size, so we use the mean value to
 
 ```{r}
 fam.income.summary = aggregate(income ~ FAMSIZE_2012, data = nlsy, FUN = mean)
-fam.income.summary
 ```
 
 Based the following plot, we find the tendency is quite weird.
@@ -486,7 +485,6 @@ pairs(df.nlsy[, 1:6], lower.panel = panel.cor)
 
 From the plot we can see that our independent variables are not correlated with each other. 
 
-
 2. linear regression
 
 ```{r}
@@ -495,8 +493,18 @@ df.nlsy.lm = lm(income ~ ., data = df.nlsy)
 summary(df.nlsy.lm)
 ```
 
+```{r}
+# Nicer print-out using kable
+kable(summary(df.nlsy.lm)$coef, digits = c(3, 3, 3, 5))
+```
 
-Variable "growth", "grade, "gender" and "family size" are significant. 
+
+Variable "growth", "grade, "gender" and "family size" are significant in expaining the depedent variable "income".
+Holding every other influencers constant, one unit of increase in the number of jobs a specific candidate had from year 1990 to 2012 will decrease average income by 0.042 unit; 
+one unit of increase in the grade completed in 2012 will lead to a 0.1 unit increase in the salary; 
+Male's income is on average 0.36 more than that of female; 
+one unit of increase in family size will lead to a 0.02 unit increase in the salary;   
+
 ```{r}
 plot(df.nlsy.lm)
 ```
