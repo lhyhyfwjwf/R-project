@@ -1,0 +1,506 @@
+---
+title: "R PROJECT FINAL REPORT"
+author: ""
+date: "12/5/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+Is there a significant difference in income between men and women? Does the difference vary depending on other factors (e.g., education, marital status, criminal history, drug use, childhood household factors, profession, etc.)?
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Part 1: Prepare data
+
+1. Read the file
+```{r}
+library(MASS)
+library(plyr)
+library(ggplot2)
+nlsy = read.csv("nlsy79_income.csv")
+```
+
+2. Change columns' name and alter values
+```{r}
+colnames(nlsy) <- c("VERSION_R25_2012",
+                    "CASEID_1979",
+                    "FAM-2A_1979",
+                    "FAM-POB_1979",
+                    "FAM-3_1979",
+                    "FAM-3A_1979",
+                    "FAM-RES_1979",
+                    "FAM-6_1979",
+                    "R_REL-1_COL_1979",
+                    "SCHOOL-31_1979",
+                    "MIL-6_1979",
+                    "WOMENS-ROLES_000001_1979",
+                    "WOMENS-ROLES_000002_1979",
+                    "WOMENS-ROLES_000003_1979",
+                    "WOMENS-ROLES_000004_1979",
+                    "WOMENS-ROLES_000006_1979",
+                    "WOMENS-ROLES_000007_1979",
+                    "WOMENS-ROLES_000008_1979",
+                    "EXP-OCC_1979",
+                    "EXP-9_1979",
+                    "race",
+                    "gender",
+                    "MARSTAT-KEY_1979",
+                    "FAMSIZE_1979",
+                    "POVSTATUS_1979",
+                    "POLICE-1_1980",
+                    "POLIC-1C_1980",
+                    "POLICE-2_1980",
+                    "ALCH-2_1983",
+                    "DS-8_1984",
+                    "DS-9_1984",
+                    "Q13-5_TRUNC_REVISED_1990",
+                    "POVSTATUS_1990",
+                    "HGCREV90_1990",
+                    "jobs.num",
+                    "NUMCH90_1990",
+                    "AGEYCH90_1990",
+                    "DS-12_1998",
+                    "DS-13_1998",
+                    "INDALL-EMP.01_2000",
+                    "CPSOCC80.01_2000",
+                    "OCCSP-55I_CODE_2000",
+                    "Q2-15B_2000",
+                    "Q10-2_2000",
+                    "Q13-5_TRUNC_REVISED_2000",
+                    "FAMSIZE_2000",
+                    "TNFI_TRUNC_2000",
+                    "POVSTATUS_2000",
+                    "MARSTAT-COL_2000",
+                    "MARSTAT-KEY_2000",
+                    "MO1M1B_XRND",
+                    "Q2-10B~Y_2012",
+                    "INDALL-EMP.01_2012",
+                    "OCCALL-EMP.01_2012",
+                    "OCCSP-55I_CODE_2012",
+                    "Q2-15A_2012",
+                    "Q12-6_2012",
+                    "income",
+                    "Q13-5_SR000001_2012",
+                    "Q13-5_SR000002_2012",
+                    "Q13-18_TRUNC_2012",
+                    "Q13-18_SR000001_TRUNC_2012",
+                    "FAMSIZE_2012",
+                    "REGION_2012",
+                    "HGC_2012",
+                    "URBAN-RURAL_2012",
+                    "JOBSNUM_2012")
+```
+
+
+
+# Part 2: Data preprocessing
+
+Apart from gender factor, We have chosen 5 other variables together as independent variables. They are "number of drinks average day", "highest grade completed", "number of jobs", "family size" and "residence in urban/rural". The dependent variable is income.
+
+## Dependent Variable
+### Income
+1. Delete those non-interview
+```{r}
+
+nlsy = nlsy[nlsy$income != -5, ]
+```
+2. Use the average of Q13-5_SR000002_2012 and Q13-5_SR000002_2012 if answered
+```{r}
+nlsy = mutate(nlsy, income = ifelse(income == -2 & `Q13-5_SR000001_2012` != -1 & `Q13-5_SR000001_2012` != -2 & 
+                                                  `Q13-5_SR000002_2012` != -1 & `Q13-5_SR000002_2012` != -2, 
+                                                (`Q13-5_SR000001_2012` + `Q13-5_SR000002_2012`) / 2, income))
+```
+3. Use the increase rate of income in 1990 - 2000 to predict 2012
+```{r}
+nlsy = mutate(nlsy, income = ifelse(income < 0 & `Q13-5_TRUNC_REVISED_1990` > 0 & `Q13-5_TRUNC_REVISED_2000` >= 0, 
+                                                `Q13-5_TRUNC_REVISED_2000` * (`Q13-5_TRUNC_REVISED_2000` / 
+                                                                                `Q13-5_TRUNC_REVISED_1990`), income))
+```
+4. Use the median of income to predict the rest
+```{r}
+income.median = median(nlsy[nlsy$income > 0, "income"])
+nlsy = mutate(nlsy, income = ifelse(income <= 0, income.median, income))
+```
+5. Truncate
+Based on the official website of nlsy79, beginning in 1996, another new algorithm was used. This algorithm takes the top two percent of respondents with valid values and averages them. That averaged value replaces the values for all cases in the top range. 
+So we use the 98% quantile to replace the top 2% income. And also, we find that some respondents' income is 0 which doesn't make sense, so we use the 2% quantile to replace the bottom 2% income.
+```{r}
+nlsy = mutate(nlsy, income = ifelse(income > quantile(nlsy$income, 0.98), 
+                                                quantile(nlsy$income, 0.98), income))
+nlsy = mutate(nlsy, income = ifelse(income < quantile(nlsy$income, 0.02), 
+                                                quantile(nlsy$income, 0.02), income))
+```
+6. Head lines after cleaning income
+```{r}
+head(nlsy[,c("CASEID_1979","income")], 10)
+```
+
+## Independent Variables
+
+1. Q12-6_2012
+
+"Q12-6_2012" describes the number of drinks respondent has on average day. There are `r nrow(nlsy["Q12-6_2012"])` responses, among which `r sum(nlsy[["Q12-6_2012"]] == -5)` respondents are not interviewed. Thus we decided to drop these rows. There are `r sum(nlsy[["Q12-6_2012"]] == -1)` respondents refused to answer this question,  `r sum(nlsy[["Q12-6_2012"]] == -2)` respondents were not sure about the answer (don't know) and  `r sum(nlsy[["Q12-6_2012"]] == -4)` respondents who were not required to answer this question (valid skip). For cases listed above, We decided to use median value to fill in these missing values. (Why use medium?)
+
+```{r pressure, echo=FALSE}
+
+# create a new table with only drinks column in 2012 
+drinks = nlsy[["Q12-6_2012"]]
+
+# drop non-interviwed data in 2012 
+drinks = drinks[drinks != -5]
+
+# calculate the difference, if unanswered, use median value to fill in missing data
+drinks = ifelse(drinks< 0, median(drinks >= 0), drinks)
+
+```
+
+
+2. HGC_2012
+
+"HGC_2012" describes the highest grade completed as of May 1 survey year. There are `r length(nlsy$HGC_2012)` responses, among which `r sum(nlsy[["HGC_2012"]] == -5)` respondents are not interviewed. We decided to drop these rows, because there is no point in using other strategies "faking" the data, since those respondents didn't even participate in the interview, there is no other sources we can make assumptions or predictions about their answers. 
+
+
+```{r}
+
+# create a new table with only grade column in 2012 
+grade = nlsy[["HGC_2012"]]
+
+# drop non-interviwed data in 2012 
+grade = grade[grade != -5]
+
+# calculate the difference, if unanswered, use median value to fill in missing data
+grade = ifelse(grade< 0, median(grade >= 0), grade)
+
+```
+
+
+3. JOBSNUM_2012 & jobs.num
+
+"JOBSNUM_2012" and "jobs.num" both describe the number of jobs ever reported as of interview date. The difference is that "JOBSNUM_2012" is the data collected in 2012, while "jobs.num" is collected in 1990. 
+We decided to calculate the growth/difference from 1990 to 2012 to see how the increase of job numbers is related to the income.  
+
+First, we did some cleaning to only keep valid data. We dropped all responses that are "non-interview" in 2012. For "Don't know" (2), "Invalid Skip" (7) and "non-interview" (289) responses in 1990, we decided to leave them unanswered and the growth uncalculated, then later fill the missing growth column with the median growth value. 
+
+```{r}
+
+# create a new table with only job sum columns in 2012 and 1990 
+jobsum = nlsy[ , c("JOBSNUM_2012", "jobs.num")]
+
+# drop non-interviwed data in 2012 
+jobsum = jobsum[jobsum$JOBSNUM_2012 >= 0, ]
+
+# calculate the difference, if unanswered, temporarily use 1 to represent
+jobsum = mutate(jobsum,
+  growth = ifelse(jobs.num < 0, -1, JOBSNUM_2012 - jobs.num))
+
+# use median value to fill in missing data
+jobsum.median = median(jobsum[jobsum$growth >= 0, "growth"])
+jobsum = mutate(jobsum, growth = ifelse(growth == -1, jobsum.median, growth))
+
+```
+
+4. FAM-6_1979 & URBAN-RURAL_2012
+FAM-6_1979 describes the area that responsers live at age 14(urban/ rural). URBAN-RURAL_2012 describes the area that responsers live in 2012.
+In this part , we calculate the difference of this two viariables. And the variable `rural.urban.diff` describes how did the repsonsers change their living region for the past years. And we would like to see if the change of living region has any impact on the responsers' income.
+
+```{r}
+#Rural/ Urban Comparison
+#rural=0; urban=1
+nlsy $ `FAM-6_1979` [(nlsy $ `FAM-6_1979` == 2)|(nlsy$`FAM-6_1979` == 3)] = 0
+#delete invalid skip in 1979
+#nlsy = nlsy[nlsy $ `FAM-6_1979` != -3,]
+
+getmode = function(v) {
+   uniqv = unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+#replace invalid skip in 1979 by the mode
+nlsy$`FAM-6_1979`[nlsy$`FAM-6_1979`==-3]=getmode(nlsy$`FAM-6_1979`)
+
+#delete non-interview in 2012
+nlsy = nlsy[nlsy$`URBAN-RURAL_2012` != -5,]
+
+#use median in 2012 to replace unknown and valid skip in 2012
+urban.rural.median.2012 = median(nlsy$`URBAN-RURAL_2012`)
+nlsy$`URBAN-RURAL_2012`[nlsy$`URBAN-RURAL_2012` == -4|nlsy$`URBAN-RURAL_2012` == 2] = urban.rural.median.2012
+
+#diffence between 1979 and 2012
+#urban.rural.diiff
+#-1 from urban to rural
+# 0 stay in rural or stay in urban
+# 1 from rural to urban
+nlsy = mutate(nlsy, urban.rural.diff = as.factor(nlsy$`URBAN-RURAL_2012`-nlsy $ `FAM-6_1979`))
+```
+
+5. gender
+
+Map the value of gender from 1, 2 to male and female.
+
+```{r}
+nlsy = mutate(nlsy, gender = as.factor(mapvalues(gender, c(1, 2), c("Male", "Female"))))
+```
+
+
+6. FAMSIZE_2012
+
+Drop non-interview data. 
+
+
+### Last Step before analysis - turn selected columns into a dataframe
+```{r}
+df.nlsy = data.frame(growth = jobsum$growth, grade = grade, drinks = drinks, urban.rural.diff = nlsy$urban.rural.diff, gender = nlsy$gender, family.size = nlsy$FAMSIZE_2012, income = nlsy$income)
+```
+
+
+# Part 3: Individual Factor Analysis
+
+1. see the head of the new data frame.
+
+```{r}
+head(df.nlsy)
+```
+
+2. Income ~ Job Number Growth
+
+```{r}
+ggplot(data = df.nlsy, aes(x = growth, y = income)) + geom_point() + xlab("Job Number Growth") + ylab("Income")
+```
+
+3. Income ~ Grade
+
+```{r}
+
+ggplot(data = df.nlsy, aes(x = as.factor(grade), y = income)) + geom_boxplot() + xlab("Highest Grade Completed") + ylab("Income")
+```
+
+As we can see form the plot, average income increases with as the highest grade completed gets higher. Also, as grade gets higher,  the highest income that can be obtained is higher, and the income range become wider.
+
+4. Income ~ Drinks
+
+```{r}
+ggplot(data = df.nlsy, aes(x = as.factor(drinks), y = income)) + geom_point() + xlab("Number of drinks everyday") + ylab("Income")
+```
+
+5. Income ~ Family size
+
+There exists large gap in each level of family size, so we use the mean value to present. 
+
+```{r}
+fam.income.summary = aggregate(income ~ FAMSIZE_2012, data = nlsy, FUN = mean)
+```
+
+Based the following plot, we find the tendency is quite weird.
+
+```{r}
+ggplot(data = fam.income.summary, aes(x = FAMSIZE_2012, y = income)) + geom_point() + xlab("Family size") + ylab("Income")
+```
+
+So we take family poverty status into consideration. Based on demography, relatively poor families and relatively rich families have different performance when having more children or relatives. We use the data in 2000 which have the record of family poverty status and only reserve those answered.
+
+```{r}
+nlsy = mutate(nlsy, POVSTATUS_2000 = as.factor(mapvalues(POVSTATUS_2000,
+                                                               c(0,1), c("NOT IN POVERTY", "IN POVERTY"))))
+nlsy.fam.pov = nlsy[nlsy$POVSTATUS_2000 == "NOT IN POVERTY" | nlsy$POVSTATUS_2000 == "IN POVERTY", ]
+fam.income.summary = aggregate(income ~ POVSTATUS_2000 + FAMSIZE_2012, data = nlsy.fam.pov, FUN = mean)
+fam.income.summary
+```
+
+First, we look into the correlationship between income and family size, poverty status. 
+
+```{r}
+ddply(fam.income.summary, "POVSTATUS_2000", summarise, correlation.coefficient = cor(FAMSIZE_2012, income))
+```
+*If only consider the family size factor, the correlation coefficient is `r with(aggregate(income ~ FAMSIZE_2012, data = nlsy.fam.pov, FUN = mean), cor(FAMSIZE_2012, income))`*
+
+Statistically, only when the absolute value of correlation coefficient is larger than 0.5, we say the two variables correlate with each other significantly. Following plot show the correlationship more directly.
+
+```{r}
+fam.income.ggplot = ggplot(data = fam.income.summary, aes(x = FAMSIZE_2012, y = income, colour = POVSTATUS_2000, shape = POVSTATUS_2000))
+fam.income.ggplot + geom_point() + geom_smooth(method = "lm") + xlab("Family size")
+```
+
+Both family in poverty and family not in poverty has an have an increase in income when size becomes larger. However, the growing rate (slope) of family not in poverty is bigger.
+Then, we build the regression model.
+
+```{r}
+fam.income.lm = lm(income ~ POVSTATUS_2000 + FAMSIZE_2012, data = fam.income.summary)
+summary(fam.income.lm)
+```
+
+Both variables are significant under the significance level of 0.05. 
+Then plotting the lm object.
+
+```{r}
+plot(fam.income.lm)
+```
+
+**Conclution: Generally, when family size grows, the income of respondent will increase, but the extent of growth is based on family poverty status.**
+
+6. Income ~ Gender
+
+Draw the box plot to see the difference between female and male.
+```{r}
+ggplot(data = nlsy, aes(x = as.factor(gender), y = income)) + geom_boxplot() + xlab("Gender") + ylab("Income")
+```
+
+Then, Using t-test to quantify the difference.
+First, we need to check whether data is normal-distributed. Draw the density plot: 
+```{r}
+qplot(fill = gender, x = income, data = nlsy, geom = "density", 
+      alpha = I(0.5),
+      adjust = 1.5, 
+      xlim = c(0, 200000))
+```
+
+Using bartlett.test to get a qutified result:
+```{r}
+bartlett.test(income ~ gender, data = nlsy)
+```
+P-value is small, so we can assume the data is normal-distributed when group by the two groups - female, male.
+
+Time to do a t-test!
+```{r}
+t.test(nlsy$income~nlsy$gender)
+```
+
+*Conclusion: We can see the p-value is less than 2.2e-16, which means the difference is statistically significant.*
+
+7. income ~ living region change
+
+summary the data grouped by people's region change
+```{r}
+nlsy=mutate(nlsy, region.change.groups=mapvalues(urban.rural.diff,from=c(-1,0,1), to=c("urban to rural","stay in urban/rural","rural to urban")))
+ddply(nlsy, ~ region.change.groups, summarise, count=length(region.change.groups), rural.urban.mean=mean(income) , urban.rural.std =sd(income), urban.rural.median=median(income))
+```
+
+** Box Plot ** Here, we use box plot to have a look of overall data
+The box plot shows that the average of these three groups do not have the same income.
+```{r, fig.align='center', fig.width = 5, fig.height = 4}
+# Create boxplot showing how income varies between varies in region change
+qplot(x = region.change.groups, y = income,
+      geom = "boxplot", data = nlsy,
+      xlab = "Region Change", 
+      ylab = "Income",
+      fill = I("lightblue"))
+```
+
+#We have three groups in urban.rural.diff :
+#(1)stay in rural/ stay  in urban 0
+#(2) move from urban to rural    -1
+#(3) move from rural to urban     1
+#In this part, we use ANOVA (analysis of variance) to compare the means between the three groups
+```{r }
+summary(aov( income ~ urban.rural.diff, data = nlsy))
+```
+
+**But we still don't know if our sample is normal or not.
+Here, we use qqlot to diagnose non-normality
+According to the result, our sample doesn't fit the line well. Therefore, our sample is not normal.**
+```{r, fig.align='center', fig.width = 5, fig.height = 4}
+# stay in urban / stay in rural
+# qq plot
+with(nlsy, qqnorm(income[urban.rural.diff==0]))
+# add reference line
+with(nlsy, qqline(income[urban.rural.diff==0],col="blue"))
+
+# move from urban to rural
+# qq plot
+with(nlsy, qqnorm(income[urban.rural.diff==-1]))
+# add reference line
+with(nlsy, qqline(income[urban.rural.diff==-1],col="blue"))
+
+# move from rural to urban
+# qq plot
+with(nlsy, qqnorm(income[urban.rural.diff==1]))
+# add reference line
+with(nlsy, qqline(income[urban.rural.diff==1],col="blue"))
+
+```
+
+** Density plots**
+According to density plots, we can see the data(income grouped by region change) is right skewed.
+```{r}
+qplot(fill = region.change.groups, x = income, data = nlsy, geom = "density", 
+      alpha = I(0.5),
+      adjust = 1.5, 
+      xlab="Income",
+      ylab="the Number of Responser"
+     )
+```
+
+
+**As the plots shows our sample is not normal, we run a Mann-Whitney U test (aka Wilcoxon rank-sum test). In this part, we compare three groups seperately by 3 tests.** 
+```{r}
+income.region.wilcox.test1 = with(nlsy, wilcox.test(x=income[urban.rural.diff==-1], 
+                   y=income[urban.rural.diff==0]))
+income.region.wilcox.test2= with(nlsy, wilcox.test(x=income[urban.rural.diff==0], 
+                   y=income[urban.rural.diff==1]))
+income.region.wilcox.test3 = with(nlsy, wilcox.test(x=income[urban.rural.diff==-1], 
+                   y=income[urban.rural.diff==1]))
+income.region.wilcox.test1
+income.region.wilcox.test2
+income.region.wilcox.test3
+```
+
+**Interpretation of aka Wilcoxon ran-sum test result** 
+
+The p-value for `difference between groups stay in urban/ rural and move from urban to rural` is `r income.region.wilcox.test1$p.value`
+The p-value for `difference between groups stay in urban/ rural and move from rural to urban` is `r income.region.wilcox.test2$p.value`
+The p-value for `difference between groups move from rural to urban and move from urban to rural` is `r income.region.wilcox.test3$p.value`
+It seems that the average income among these three groups don't have in significant differences. The pValue shows that living region changes of responsers is not a good predictor variable for income. However, it would still be a good control variable to control some uncertainties. We would add it to our linear regression model.
+
+
+
+
+
+
+
+# Part 4: Overall Liner Regression Model Analysis
+
+1. Colinearity examination
+
+```{r}
+#df.nlsy=mutate(df.nlsy, occupation=nlsy$`INDALL-EMP.01_2012`)
+# pairs  
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = pmax(1, cex.cor * r))
+}
+
+# Use panel.cor to display correlations in lower panel.
+pairs(df.nlsy[, 1:6], lower.panel = panel.cor)
+```
+
+From the plot we can see that our independent variables are not correlated with each other. 
+
+
+2. linear regression
+
+```{r}
+
+df.nlsy.lm = lm(income ~ ., data = df.nlsy)
+summary(df.nlsy.lm)
+```
+
+
+Variable "growth", "grade, "gender" and "family size" are significant. 
+```{r}
+plot(df.nlsy.lm)
+```
+
+
+
+
+
